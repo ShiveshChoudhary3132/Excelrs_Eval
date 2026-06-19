@@ -1,0 +1,15 @@
+# Python / Backend
+/cbt_backend/.env
+/cbt_backend/__pycache__/
+/cbt_backend/venv/
+/cbt_backend/.venv/
+*.pyc
+
+# Node / Frontend
+/cbt_frontend/node_modules/
+/cbt_frontend/dist/
+/cbt_frontend/build/
+/cbt_frontend/.env
+
+# General / OS
+.DS_Store
