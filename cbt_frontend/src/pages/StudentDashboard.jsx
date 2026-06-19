@@ -17,7 +17,7 @@ export default function StudentDashboard() {
 
   const fetchStudentTests = async () => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/student/${user.email}/tests`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/student/${user.email}/tests`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {

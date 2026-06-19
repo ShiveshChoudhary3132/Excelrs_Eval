@@ -46,7 +46,7 @@ export default function TeacherDashboard() {
   // --- DATA FETCHING ---
   const fetchClasses = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/classes', {
+      const response = await fetch('https://excelrs-backend.onrender.com/api/classes', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -63,7 +63,7 @@ export default function TeacherDashboard() {
 
   const fetchClassTests = async (classId) => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/${classId}/tests`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/${classId}/tests`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -74,7 +74,7 @@ export default function TeacherDashboard() {
 
   const fetchSubmissions = async (testId) => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/tests/${testId}/submissions`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/tests/${testId}/submissions`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -98,7 +98,7 @@ export default function TeacherDashboard() {
     e.preventDefault();
     if (!newClassName.trim()) return;
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/classes', {
+      const response = await fetch('https://excelrs-backend.onrender.com/api/classes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ class_name: newClassName })
@@ -114,7 +114,7 @@ export default function TeacherDashboard() {
     e.preventDefault();
     if (!studentEmail.trim() || !selectedClass) return;
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/${selectedClass.id}/students`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/${selectedClass.id}/students`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ email: studentEmail })
@@ -132,7 +132,7 @@ export default function TeacherDashboard() {
   const handleRemoveStudent = async (emailToRemove) => {
     if (!window.confirm(`Remove ${emailToRemove}?`)) return;
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/${selectedClass.id}/students/${emailToRemove}`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/${selectedClass.id}/students/${emailToRemove}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -143,7 +143,7 @@ export default function TeacherDashboard() {
   const handleDeleteTest = async (testId) => {
     if (!window.confirm("Are you sure you want to delete this test?")) return;
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/tests/${testId}`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/tests/${testId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -160,7 +160,7 @@ export default function TeacherDashboard() {
     
     setIsGenerating(true);
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/classes/ai/generate-test', {
+      const response = await fetch('https://excelrs-backend.onrender.com/api/classes/ai/generate-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ topic: aiTopic, question_count: parseInt(aiCount) })
@@ -189,7 +189,7 @@ export default function TeacherDashboard() {
   const handleGrantRetake = async () => {
     if (!window.confirm(`Are you sure you want to delete this attempt for ${selectedSubmission.student_email}? This cannot be undone.`)) return;
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/submissions/${selectedSubmission.id}`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/submissions/${selectedSubmission.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -220,7 +220,7 @@ export default function TeacherDashboard() {
     if (questions.length === 0) { alert("Please add at least one question."); return; }
     
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/${selectedClass.id}/tests`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/${selectedClass.id}/tests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ 
@@ -246,7 +246,7 @@ export default function TeacherDashboard() {
     setIsAIGrading(true);
     setAiFeedback('');
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/submissions/${selectedSubmission.id}/ai-grade`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/submissions/${selectedSubmission.id}/ai-grade`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -267,7 +267,7 @@ export default function TeacherDashboard() {
   const handleSaveGrade = async (e) => {
     e.preventDefault();
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/submissions/${selectedSubmission.id}/grade`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/submissions/${selectedSubmission.id}/grade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ score: parseInt(gradeInput) })

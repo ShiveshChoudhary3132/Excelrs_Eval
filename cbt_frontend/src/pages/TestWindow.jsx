@@ -135,7 +135,7 @@ export default function App() {
   useEffect(() => {
     const fetchTest = async () => {
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/classes/tests/${testId}`, {
+        const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/tests/${testId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
@@ -267,7 +267,7 @@ export default function App() {
 
     setIsTranslating(true);
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/classes/ai/translate', {
+      const response = await fetch('https://excelrs-backend.onrender.com/api/classes/ai/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ questions: test.questions, target_language: lang })
@@ -319,7 +319,7 @@ export default function App() {
       }
 
       // 3. Safe API Call 
-      const response = await fetch(`http://127.0.0.1:8000/api/classes/tests/${testId}/submit`, {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/tests/${testId}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ student_email: user.email, answers }) // <--- Sending REAL email
