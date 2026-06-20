@@ -2,6 +2,7 @@
 import json
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
@@ -372,6 +373,74 @@ def generate_ai_test(payload: AITestRequest, db: Session = Depends(dependencies.
         raise HTTPException(status_code=500, detail="AI generation failed.")
     
     
+@router.post("/ai/ag-ui-generate")
+async def ag_ui_generate_test(payload: AITestRequest):
+    """Generates an AI test and streams it back using the AG-UI SSE Protocol."""
+    
+    system_prompt = """
+    You are an expert, meticulous educational assessment designer. 
+    You MUST return ONLY a valid JSON object with exactly one key: 'questions'.
+    'questions' must be an array of objects. Each object must have:
+    - 'id': A unique string.
+    - 'type': 'mcq'
+    - 'text': The question text. 
+    - 'points': 10
+    - 'options': An array of EXACTLY 4 string options.
+    - 'correctAnswerIndex': An integer (0, 1, 2, or 3) representing the correct option.
+    """
+
+    seed = f"{time.time()}-{random.randint(10000, 99999)}"
+    user_prompt = f"""
+    Topic & Difficulty Instructions: "{payload.topic}"
+    Number of questions: {payload.question_count}
+    Randomization Seed: {seed}
+    """
+
+    # This generator function creates the Server-Sent Event stream
+    def ag_ui_streamer():
+        # 1. Tell the React frontend the stream has successfully started
+        yield f'data: {json.dumps({"type": "RUN_STARTED"})}\n\n'
+
+        try:
+            # 2. Start the Groq request with stream=True
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.75,
+                response_format={"type": "json_object"},
+                stream=True # <-- This is the magic key for streaming!
+            )
+            
+            accumulated_json = ""
+            
+            # 3. As Groq generates tokens, package them as AG-UI TOOL_CALL_ARGS events
+            for chunk in chat_completion:
+                content = chunk.choices[0].delta.content
+                if content:
+                    accumulated_json += content
+                    event = {
+                        "type": "TOOL_CALL_ARGS",
+                        "args": accumulated_json
+                    }
+                    yield f'data: {json.dumps(event)}\n\n'
+            
+            # 4. Tell React the AI is completely done typing
+            yield f'data: {json.dumps({"type": "RUN_FINISHED"})}\n\n'
+
+        except Exception as e:
+            print(f"Streaming Error: {str(e)}")
+            error_event = {
+                "type": "RUN_ERROR",
+                "error": str(e)
+            }
+            yield f'data: {json.dumps(error_event)}\n\n'
+
+    # Return the stream directly to the browser
+    return StreamingResponse(ag_ui_streamer(), media_type="text/event-stream")
+
 @router.post("/submissions/{sub_id}/ai-grade")
 def ai_grade_submission(sub_id: int, db: Session = Depends(dependencies.get_db)):
     """Calculates MCQ score and prompts Groq to evaluate any written essays."""
