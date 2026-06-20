@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { 
   Plus, UserPlus, FileText, ClipboardList, BookOpen, Users, 
   LogOut, LayoutDashboard, Send, X, PlusCircle, Trash2, CheckCircle2, Circle,
-  ChevronDown, ChevronUp, Clock
+  ChevronDown, ChevronUp, Clock, School
 } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 
@@ -15,6 +15,7 @@ export default function TeacherDashboard() {
   const [selectedClass, setSelectedClass] = useState(null);
   const [newClassName, setNewClassName] = useState('');
   const [studentEmail, setStudentEmail] = useState('');
+  const [teacherEmail, setTeacherEmail] = useState(''); // NEW: Co-teacher state
   
   // --- TEST STATE ---
   const [testTitle, setTestTitle] = useState('');
@@ -110,6 +111,44 @@ export default function TeacherDashboard() {
     } catch (error) { console.error(error); }
   };
 
+  // NEW: Delete Classroom Handler
+  const handleDeleteClass = async () => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${selectedClass.class_name}"? This will erase all enrolled students, published tests, and student grades. This cannot be undone.`)) return;
+    try {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/${selectedClass.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        setSelectedClass(null);
+        fetchClasses();
+      } else {
+        const errorData = await response.json();
+        alert(errorData.detail || "Failed to delete classroom.");
+      }
+    } catch (error) { console.error(error); }
+  };
+
+  // NEW: Add Teacher Handler
+  const handleAddTeacher = async (e) => {
+    e.preventDefault();
+    if (!teacherEmail.trim() || !selectedClass) return;
+    try {
+      const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/${selectedClass.id}/teachers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ email: teacherEmail })
+      });
+      if (response.ok) {
+        setTeacherEmail('');
+        fetchClasses(); 
+      } else {
+        const errorData = await response.json();
+        alert(errorData.detail || "Failed to add teacher.");
+      }
+    } catch (error) { console.error(error); }
+  };
+
   const handleAddStudent = async (e) => {
     e.preventDefault();
     if (!studentEmail.trim() || !selectedClass) return;
@@ -168,13 +207,8 @@ export default function TeacherDashboard() {
       
       if (response.ok) {
         const data = await response.json();
-        
-        // Append the new questions to the bottom of the existing list!
         setQuestions([...questions, ...data.questions]); 
-        
         alert(`Success! Added ${data.questions.length} new questions to the bottom of your test.`);
-        
-        // Optional: clear the input box so you can type the next topic easily
         setAiTopic(''); 
       } else {
         alert("AI generation failed. Check backend console.");
@@ -310,9 +344,18 @@ export default function TeacherDashboard() {
         </div>
 
         {selectedClass && (
-          <div className="bg-white border-2 border-slate-200 rounded-2xl px-6 py-4 flex items-center gap-4 shadow-sm">
-            <span className="flex h-4 w-4 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-blue-600"></span></span>
-            <p className="text-base text-slate-600 font-bold m-0">Active Workspace: <strong className="text-slate-900">{selectedClass.class_name}</strong></p>
+          <div className="bg-white border-2 border-slate-200 rounded-2xl px-6 py-4 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-4">
+              <span className="flex h-4 w-4 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-blue-600"></span></span>
+              <p className="text-base text-slate-600 font-bold m-0">Active Workspace: <strong className="text-slate-900">{selectedClass.class_name}</strong></p>
+            </div>
+            {/* NEW: Workspace Deletion Button */}
+            <button 
+              onClick={handleDeleteClass} 
+              className="text-sm font-bold text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors flex items-center gap-2"
+            >
+              <Trash2 size={16} /> Delete Workspace
+            </button>
           </div>
         )}
 
@@ -349,37 +392,72 @@ export default function TeacherDashboard() {
                 ) : (
                   <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-300 h-full flex flex-col">
                     
-                    <div className="mb-6 border-b-2 border-slate-100 pb-8">
-                      <h2 className="text-xl font-black text-slate-900 mb-2 flex items-center gap-2 m-0"><UserPlus size={22} className="text-blue-600" /> Add students</h2>
-                      <form onSubmit={handleAddStudent} className="flex gap-3 mt-4">
-                        <input type="email" required placeholder="student@school.com" value={studentEmail} onChange={(e) => setStudentEmail(e.target.value)} className="flex-1 px-4 py-3 border-2 border-slate-300 rounded-xl focus:border-blue-500 font-semibold" />
-                        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-black py-3 px-6 rounded-xl flex items-center gap-2 transition-colors"><Plus size={18} /> Add</button>
-                      </form>
+                    {/* NEW: Dual Form Grid for Students and Teachers */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 border-b-2 border-slate-100 pb-8">
+                      <div>
+                        <h2 className="text-lg font-black text-slate-900 mb-2 flex items-center gap-2 m-0"><UserPlus size={20} className="text-blue-600" /> Add Students</h2>
+                        <form onSubmit={handleAddStudent} className="flex gap-2 mt-3">
+                          <input type="email" required placeholder="student@school.com" value={studentEmail} onChange={(e) => setStudentEmail(e.target.value)} className="flex-1 px-3 py-2.5 border-2 border-slate-300 rounded-xl focus:border-blue-500 font-semibold min-w-0" />
+                          <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition-colors shrink-0"><Plus size={16} /> Add</button>
+                        </form>
+                      </div>
+
+                      <div>
+                        <h2 className="text-lg font-black text-slate-900 mb-2 flex items-center gap-2 m-0"><School size={20} className="text-violet-600" /> Add Co-Teachers</h2>
+                        <form onSubmit={handleAddTeacher} className="flex gap-2 mt-3">
+                          <input type="email" required placeholder="teacher@school.com" value={teacherEmail} onChange={(e) => setTeacherEmail(e.target.value)} className="flex-1 px-3 py-2.5 border-2 border-slate-300 rounded-xl focus:border-violet-500 font-semibold min-w-0" />
+                          <button type="submit" className="bg-violet-600 hover:bg-violet-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition-colors shrink-0"><Plus size={16} /> Add</button>
+                        </form>
+                      </div>
                     </div>
                     
-                    <div>
-                      <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2 m-0"><Users size={18} /> Enrolled Students ({selectedClass.students?.length || 0})</h3>
-                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 m-0 p-0 max-h-[300px] overflow-y-auto">
-                        {selectedClass.students?.map((studentObj, idx) => {
-                          const email = typeof studentObj === 'string' ? studentObj : studentObj.email;
-                          const name = typeof studentObj === 'string' 
-                            ? email.split('@')[0].split('.').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
-                            : studentObj.name;
+                    {/* NEW: Dual List Grid for Students and Teachers */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2 m-0"><Users size={18} /> Enrolled Students ({selectedClass.students?.length || 0})</h3>
+                        <ul className="grid grid-cols-1 gap-3 m-0 p-0 max-h-[250px] overflow-y-auto pr-2">
+                          {selectedClass.students?.map((studentObj, idx) => {
+                            const email = typeof studentObj === 'string' ? studentObj : studentObj.email;
+                            const name = typeof studentObj === 'string' 
+                              ? email.split('@')[0].split('.').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+                              : studentObj.name;
 
-                          return (
-                            <li key={idx} className="bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 flex items-center justify-between group">
-                              <div className="flex flex-col truncate pr-2">
-                                <span className="font-black text-slate-800 truncate">{name}</span>
-                                <span className="text-xs font-bold text-slate-400 truncate">{email}</span>
-                              </div>
-                              <button onClick={() => handleRemoveStudent(email)} className="text-slate-400 hover:text-red-600 bg-white p-2 rounded-lg border-2 border-slate-200 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"><X size={16} /></button>
-                            </li>
-                          )
-                        })}
-                      </ul>
+                            return (
+                              <li key={`student-${idx}`} className="bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 flex items-center justify-between group">
+                                <div className="flex flex-col truncate pr-2">
+                                  <span className="font-black text-slate-800 truncate">{name}</span>
+                                  <span className="text-xs font-bold text-slate-400 truncate">{email}</span>
+                                </div>
+                                <button onClick={() => handleRemoveStudent(email)} className="text-slate-400 hover:text-red-600 bg-white p-2 rounded-lg border-2 border-slate-200 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"><X size={16} /></button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2 m-0"><BookOpen size={18} /> Co-Teachers ({selectedClass.teachers?.length || 0})</h3>
+                        <ul className="grid grid-cols-1 gap-3 m-0 p-0 max-h-[250px] overflow-y-auto pr-2">
+                          {selectedClass.teachers?.map((teacherObj, idx) => {
+                            const email = typeof teacherObj === 'string' ? teacherObj : teacherObj.email;
+                            const name = typeof teacherObj === 'string' 
+                              ? email.split('@')[0].split('.').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+                              : teacherObj.name;
+
+                            return (
+                              <li key={`teacher-${idx}`} className="bg-violet-50 border-2 border-violet-200 rounded-xl px-4 py-3 flex items-center justify-between">
+                                <div className="flex flex-col truncate pr-2">
+                                  <span className="font-black text-violet-900 truncate">{name}</span>
+                                  <span className="text-xs font-bold text-violet-500 truncate">{email}</span>
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
                     </div>
 
-                    <div className="mt-8 border-t-2 border-slate-100 pt-8">
+                    <div className="border-t-2 border-slate-100 pt-8">
                       <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2 m-0"><FileText size={18} /> Published Assessments ({classTests.length})</h3>
                       {classTests.length === 0 ? (
                          <div className="text-center py-10 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 font-bold text-slate-400">No tests published yet.</div>

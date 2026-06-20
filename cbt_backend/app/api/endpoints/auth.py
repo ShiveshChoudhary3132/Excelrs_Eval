@@ -14,7 +14,7 @@ router = APIRouter()
 def register_user(user_in: user_schema.UserCreate, db: Session = Depends(dependencies.get_db)):
     """Endpoint for both teachers and students to create an account."""
     
-    # NEW: Prevent registration crash if someone uses a massive password
+    # Prevent registration crash if someone uses a massive password
     if len(user_in.password.encode('utf-8')) > 72:
         raise HTTPException(
             status_code=400,
@@ -45,11 +45,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
         
-    # NEW: Try to verify the password, catching bcrypt's 72-byte limit crash
+    # Try to verify the password, catching bcrypt's 72-byte limit crash
     try:
         is_valid_password = dependencies.pwd_context.verify(form_data.password, user.hashed_password)
     except ValueError:
-        # If the user pasted a giant string, bcrypt throws a ValueError
         is_valid_password = False
 
     if not is_valid_password:
@@ -57,6 +56,18 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    # ==========================================
+    # NEW: STRICT ROLE VERIFICATION
+    # ==========================================
+    # The frontend will pass the intended portal ("student" or "teacher") in the client_id field.
+    requested_portal = form_data.client_id
+    
+    if requested_portal and user.role.value != requested_portal:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. This is a {user.role.value} account, please use the correct login portal."
         )
     
     # Encode their identity and role into the JWT token

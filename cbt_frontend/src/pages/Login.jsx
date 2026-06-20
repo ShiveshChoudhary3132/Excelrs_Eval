@@ -56,6 +56,9 @@ export default function Login() {
         const formData = new URLSearchParams();
         formData.append('username', email);
         formData.append('password', password);
+        
+        // NEW: Tell the backend which portal the user is attempting to access
+        formData.append('client_id', role); 
 
         const response = await fetch('https://excelrs-backend.onrender.com/api/auth/login', {
           method: 'POST',
