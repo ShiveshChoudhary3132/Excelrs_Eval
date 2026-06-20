@@ -161,14 +161,15 @@ export default function TeacherDashboard() {
   // --- 🚀 REFACTORED: AG-UI PROTOCOL GENERATION HANDLER ---
   // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
   // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
+  // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
   const handleGenerateAI = async () => {
     if (!aiTopic.trim()) { alert("Please enter a topic and difficulty first!"); return; }
     
     setIsGenerating(true);
     setStreamProgress('Initializing Agent...');
     
-    // THE FIX: We use a local variable to dodge React's stale closure trap
-    let localDrafts = []; 
+    // THE FIX: Track the pure, unmangled string directly from the backend
+    let rawJsonString = ""; 
 
     try {
       const response = await fetch('https://excelrs-backend.onrender.com/api/classes/ai/ag-ui-generate', {
@@ -208,6 +209,10 @@ export default function TeacherDashboard() {
               if (event.type === 'RUN_STARTED') setStreamProgress('Agent thinking...');
 
               if (event.type === 'TOOL_CALL_ARGS') {
+                // 1. Always save the pure string for the final save
+                rawJsonString = event.args;
+                
+                // 2. Best-effort hack strictly for the visual preview
                 try {
                   const lastBracket = event.args.lastIndexOf('}');
                   if (lastBracket !== -1) {
@@ -219,28 +224,30 @@ export default function TeacherDashboard() {
                           id: `stream-${i}`, ...q
                       }));
                       setStreamProgress(`Drafting question ${formatted.length}...`);
-                      
-                      // Update BOTH our local variable and the React UI
-                      localDrafts = formatted; 
                       setStreamingQuestions(formatted);
                     }
                   }
-                } catch (e) { /* Ignore mangled chunks */ }
+                } catch (e) { /* Ignore partial parse errors for the visual preview */ }
               }
 
               if (event.type === 'RUN_ERROR') throw new Error(event.error);
 
               if (event.type === 'RUN_FINISHED') {
-                 // THE FIX: Use our local variable instead of React's stale state
-                 if (localDrafts.length > 0) {
-                    const formattedQuestions = localDrafts.map(q => ({
-                        // Give them permanent IDs
-                        id: Date.now().toString() + Math.random().toString(36).substring(7),
-                        ...q
-                    }));
+                 // 3. THE GUARANTEED SAVE: Parse the un-hacked, perfect JSON string here!
+                 try {
+                    const finalData = JSON.parse(rawJsonString);
                     
-                    // Move them from the draft state to the permanent test state!
-                    setQuestions(prev => [...prev, ...formattedQuestions]);
+                    if (finalData.questions && finalData.questions.length > 0) {
+                       const formattedQuestions = finalData.questions.map(q => ({
+                           id: Date.now().toString() + Math.random().toString(36).substring(7),
+                           ...q
+                       }));
+                       
+                       // Move them to the permanent test state
+                       setQuestions(prev => [...prev, ...formattedQuestions]);
+                    }
+                 } catch (finalParseError) {
+                    console.error("The AI generated an invalid final format. Raw output:", rawJsonString);
                  }
                  
                  // Clean up the UI
@@ -248,7 +255,7 @@ export default function TeacherDashboard() {
                  setStreamProgress('');
                  setStreamingQuestions([]); 
               }
-            } catch (e) { console.error("Parse error:", e); }
+            } catch (e) { console.error("Event parse error:", e); }
           }
         }
       }
