@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { HttpAgent } from '@ag-ui/client'; // <-- Imported AG-UI Protocol Client
 import { 
   Plus, UserPlus, FileText, ClipboardList, BookOpen, Users, 
   LogOut, LayoutDashboard, Send, X, PlusCircle, Trash2, CheckCircle2, Circle,
@@ -29,6 +30,7 @@ export default function TeacherDashboard() {
   const [aiTopic, setAiTopic] = useState('');
   const [aiCount, setAiCount] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [streamProgress, setStreamProgress] = useState(''); // New state for AG-UI loading updates
 
   // --- GRADING STATE ---
   const [testSubmissions, setTestSubmissions] = useState([]);
@@ -154,37 +156,78 @@ export default function TeacherDashboard() {
     } catch (error) { console.error(error); }
   };
 
-  // --- AI GENERATION HANDLER ---
+  // --- 🚀 REFACTORED: AG-UI PROTOCOL GENERATION HANDLER ---
   const handleGenerateAI = async () => {
     if (!aiTopic.trim()) { alert("Please enter a topic and difficulty first!"); return; }
     
     setIsGenerating(true);
+    setStreamProgress('Initializing Agent...');
+    let generatedQuestions = [];
+
     try {
-      const response = await fetch('https://excelrs-backend.onrender.com/api/classes/ai/generate-test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ topic: aiTopic, question_count: parseInt(aiCount) })
+      // 1. Instantiate the AG-UI Client pointed at your new backend endpoint
+      const agent = new HttpAgent({ 
+        url: 'https://excelrs-backend.onrender.com/api/classes/ai/ag-ui-generate',
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Append the new questions to the bottom of the existing list!
-        setQuestions([...questions, ...data.questions]); 
-        
-        alert(`Success! Added ${data.questions.length} new questions to the bottom of your test.`);
-        
-        // Optional: clear the input box so you can type the next topic easily
-        setAiTopic(''); 
-      } else {
-        alert("AI generation failed. Check backend console.");
+
+      // 2. Open the Bi-directional Stream
+      const stream = await agent.runStream({
+        input: { 
+          topic: aiTopic, 
+          question_count: parseInt(aiCount) 
+        }
+      });
+
+      // 3. Process AG-UI Protocol Events as they arrive
+      for await (const event of stream) {
+        if (event.type === 'RUN_STARTED') {
+          setStreamProgress('Agent thinking...');
+        }
+
+        // Catch streaming tool arguments (e.g., when the AI builds the questions array)
+        if (event.type === 'TOOL_CALL_ARGS') {
+          setStreamProgress('Drafting questions...');
+          try {
+            // Optimistically parse the partial JSON stream
+            const partialData = JSON.parse(event.args);
+            if (partialData.questions) {
+              generatedQuestions = partialData.questions;
+            }
+          } catch (e) {
+            // Ignore incomplete JSON chunks until the next full payload arrives
+          }
+        }
+
+        if (event.type === 'RUN_ERROR') {
+          throw new Error(event.error || "AG-UI run failed");
+        }
+
+        if (event.type === 'RUN_FINISHED') {
+           if (generatedQuestions.length > 0) {
+              // Ensure we merge formatting properly (give unique UI IDs)
+              const formattedQuestions = generatedQuestions.map(q => ({
+                  id: Date.now().toString() + Math.random().toString(36).substring(7),
+                  ...q
+              }));
+              setQuestions(prev => [...prev, ...formattedQuestions]);
+              alert(`Success! Streamed ${formattedQuestions.length} questions into the assessment.`);
+           } else {
+              alert("Agent finished, but no questions were produced.");
+           }
+           setAiTopic('');
+           setStreamProgress('');
+        }
       }
     } catch (error) {
-      console.error(error);
+      console.error("AG-UI Connection Error:", error);
+      alert("Failed to connect to the AG-UI endpoint. Check backend logs.");
+      setStreamProgress('');
     } finally {
       setIsGenerating(false);
     }
   };
+  // -------------------------------------------------------------
 
   const handleGrantRetake = async () => {
     if (!window.confirm(`Are you sure you want to delete this attempt for ${selectedSubmission.student_email}? This cannot be undone.`)) return;
@@ -465,10 +508,10 @@ export default function TeacherDashboard() {
                   </div>
                 </div>
 
-                {/* --- AI TEST GENERATOR PANEL --- */}
+                {/* --- AG-UI TEST GENERATOR PANEL --- */}
                 <div className="bg-emerald-50 border-2 border-emerald-200 rounded-3xl p-8 shadow-sm">
                   <h3 className="text-xl font-black text-emerald-900 mb-4 flex items-center gap-2 m-0">
-                    ✨ Generate with Excelrs Eval AI
+                    ✨ Generate with Excelrs Eval AI (AG-UI)
                   </h3>
                   <div className="flex flex-col sm:flex-row gap-4">
                     <input 
@@ -494,7 +537,7 @@ export default function TeacherDashboard() {
                       disabled={isGenerating}
                       className={`font-black py-3 px-6 rounded-xl transition-all shadow-sm ${isGenerating ? 'bg-emerald-200 text-emerald-600 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
                     >
-                      {isGenerating ? 'Generating...' : 'Generate'}
+                      {isGenerating ? (streamProgress || 'Generating...') : 'Generate via AG-UI'}
                     </button>
                   </div>
                 </div>
@@ -599,7 +642,6 @@ export default function TeacherDashboard() {
                       </p>
                     </div>
                     
-                    {/* --- NEW: AI GRADING & RETAKE PANEL --- */}
                     <div className="flex flex-col gap-3 sm:items-end w-full sm:w-auto">
                       <div className="flex flex-wrap items-center gap-3">
                         <button 
@@ -626,7 +668,6 @@ export default function TeacherDashboard() {
                         </form>
                       </div>
 
-                      {/* Display the AI's logic directly beneath the score */}
                       {aiFeedback && (
                          <div className="bg-emerald-50 border-2 border-emerald-200 text-emerald-800 text-sm font-semibold p-4 rounded-xl max-w-md shadow-sm animate-in fade-in slide-in-from-top-2">
                             <span className="block text-[10px] font-black uppercase tracking-widest text-emerald-600 mb-1">AI Evaluation Notes:</span>
@@ -638,7 +679,6 @@ export default function TeacherDashboard() {
                   <div className="flex-1 overflow-y-auto pr-4 space-y-6">
                     <h3 className="font-black text-slate-400 uppercase tracking-widest text-xs m-0">Student Responses</h3>
                     
-                    {/* Map the answers back to the original questions! */}
                     {classTests.find(t => t.id === selectedSubmission.test_id)?.questions?.map((q, idx) => {
                       const studentAnswer = selectedSubmission.answers[idx.toString()];
                       const isCorrect = q.type === 'mcq' && studentAnswer == q.correctAnswerIndex;
@@ -678,16 +718,6 @@ export default function TeacherDashboard() {
                         </div>
                       )
                     })}
-
-                    {/* Raw JSON Dump for Future AI */}
-                    <div className="mt-12 pt-8 border-t-2 border-slate-200">
-                      <h3 className="font-black text-slate-400 uppercase tracking-widest text-xs m-0 mb-4 flex items-center gap-2">
-                        Raw API Data <span className="bg-slate-200 text-slate-500 px-2 py-0.5 rounded text-[10px]">For Future AI Processing</span>
-                      </h3>
-                      <pre className="bg-slate-900 text-slate-500 p-4 rounded-xl text-xs overflow-x-auto font-mono opacity-50 hover:opacity-100 transition-opacity cursor-crosshair border-2 border-slate-800 shadow-inner">
-                        {JSON.stringify(selectedSubmission.answers, null, 2)}
-                      </pre>
-                    </div>
                   </div>
                 </div>
               )}
