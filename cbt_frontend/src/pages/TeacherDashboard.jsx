@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { HttpAgent } from '@ag-ui/client'; // <-- Imported AG-UI Protocol Client
 import { 
   Plus, UserPlus, FileText, ClipboardList, BookOpen, Users, 
   LogOut, LayoutDashboard, Send, X, PlusCircle, Trash2, CheckCircle2, Circle,
@@ -159,6 +158,7 @@ export default function TeacherDashboard() {
   };
 
   // --- 🚀 REFACTORED: AG-UI PROTOCOL GENERATION HANDLER ---
+  // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
   const handleGenerateAI = async () => {
     if (!aiTopic.trim()) { alert("Please enter a topic and difficulty first!"); return; }
     
@@ -167,63 +167,90 @@ export default function TeacherDashboard() {
     let generatedQuestions = [];
 
     try {
-      // 1. Instantiate the AG-UI Client pointed at your new backend endpoint
-      const agent = new HttpAgent({ 
-        url: 'https://excelrs-backend.onrender.com/api/classes/ai/ag-ui-generate',
-        headers: { 'Authorization': `Bearer ${token}` }
+      // 1. Use the native browser fetch API
+      const response = await fetch('https://excelrs-backend.onrender.com/api/classes/ai/ag-ui-generate', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({ topic: aiTopic, question_count: parseInt(aiCount) })
       });
 
-      // 2. Open the Bi-directional Stream
-      const stream = await agent.runStream({
-        input: { 
-          topic: aiTopic, 
-          question_count: parseInt(aiCount) 
-        }
-      });
+      if (!response.ok) throw new Error("Network response was not ok");
 
-      // 3. Process AG-UI Protocol Events as they arrive
-      for await (const event of stream) {
-        if (event.type === 'RUN_STARTED') {
-          setStreamProgress('Agent thinking...');
-        }
+      // 2. Open the native data stream reader
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
 
-        // Catch streaming tool arguments (e.g., when the AI builds the questions array)
-        if (event.type === 'TOOL_CALL_ARGS') {
-          setStreamProgress('Drafting questions...');
-          try {
-            // Optimistically parse the partial JSON stream
-            const partialData = JSON.parse(event.args);
-            if (partialData.questions) {
-              generatedQuestions = partialData.questions;
+      // 3. Read the chunks of text as they arrive from the Python backend
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Decode the binary data into text and add it to our buffer
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE messages are separated by double newlines (\n\n)
+        const parts = buffer.split('\n\n');
+        
+        // Keep the last, incomplete chunk in the buffer for the next loop
+        buffer = parts.pop(); 
+
+        for (const part of parts) {
+          if (part.startsWith('data: ')) {
+            // Strip the "data: " prefix to get the raw JSON string
+            const dataStr = part.substring(6); 
+            
+            try {
+              const event = JSON.parse(dataStr);
+
+              if (event.type === 'RUN_STARTED') {
+                setStreamProgress('Agent thinking...');
+              }
+
+              // Catch the streaming payload!
+              if (event.type === 'TOOL_CALL_ARGS') {
+                setStreamProgress('Drafting questions...');
+                try {
+                  // Optimistically parse the partial JSON stream
+                  const partialData = JSON.parse(event.args);
+                  if (partialData.questions) {
+                    generatedQuestions = partialData.questions;
+                  }
+                } catch (e) {
+                  // Ignore incomplete JSON chunks until the next full payload arrives
+                }
+              }
+
+              if (event.type === 'RUN_ERROR') {
+                throw new Error(event.error || "Generation failed");
+              }
+
+              if (event.type === 'RUN_FINISHED') {
+                 if (generatedQuestions.length > 0) {
+                    const formattedQuestions = generatedQuestions.map(q => ({
+                        id: Date.now().toString() + Math.random().toString(36).substring(7),
+                        ...q
+                    }));
+                    setQuestions(prev => [...prev, ...formattedQuestions]);
+                    alert(`Success! Streamed ${formattedQuestions.length} questions into the assessment.`);
+                 } else {
+                    alert("Agent finished, but no questions were produced.");
+                 }
+                 setAiTopic('');
+                 setStreamProgress('');
+              }
+            } catch (e) {
+              console.error("JSON Parse error on stream chunk:", e);
             }
-          } catch (e) {
-            // Ignore incomplete JSON chunks until the next full payload arrives
           }
-        }
-
-        if (event.type === 'RUN_ERROR') {
-          throw new Error(event.error || "AG-UI run failed");
-        }
-
-        if (event.type === 'RUN_FINISHED') {
-           if (generatedQuestions.length > 0) {
-              // Ensure we merge formatting properly (give unique UI IDs)
-              const formattedQuestions = generatedQuestions.map(q => ({
-                  id: Date.now().toString() + Math.random().toString(36).substring(7),
-                  ...q
-              }));
-              setQuestions(prev => [...prev, ...formattedQuestions]);
-              alert(`Success! Streamed ${formattedQuestions.length} questions into the assessment.`);
-           } else {
-              alert("Agent finished, but no questions were produced.");
-           }
-           setAiTopic('');
-           setStreamProgress('');
         }
       }
     } catch (error) {
-      console.error("AG-UI Connection Error:", error);
-      alert("Failed to connect to the AG-UI endpoint. Check backend logs.");
+      console.error("Stream Connection Error:", error);
+      alert("Failed to connect to the generation stream. Check console for details.");
       setStreamProgress('');
     } finally {
       setIsGenerating(false);
