@@ -160,12 +160,15 @@ export default function TeacherDashboard() {
 
   // --- 🚀 REFACTORED: AG-UI PROTOCOL GENERATION HANDLER ---
   // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
+  // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
   const handleGenerateAI = async () => {
     if (!aiTopic.trim()) { alert("Please enter a topic and difficulty first!"); return; }
     
     setIsGenerating(true);
     setStreamProgress('Initializing Agent...');
-    let generatedQuestions = [];
+    
+    // THE FIX: We use a local variable to dodge React's stale closure trap
+    let localDrafts = []; 
 
     try {
       const response = await fetch('https://excelrs-backend.onrender.com/api/classes/ai/ag-ui-generate', {
@@ -177,7 +180,6 @@ export default function TeacherDashboard() {
         body: JSON.stringify({ 
           topic: aiTopic, 
           question_count: parseInt(aiCount),
-          // Send all existing question texts to the AI so it knows what to copy!
           existing_context: questions.map(q => q.text) 
         })
       });
@@ -207,44 +209,44 @@ export default function TeacherDashboard() {
 
               if (event.type === 'TOOL_CALL_ARGS') {
                 try {
-                  // THE HACK: Find the last complete closing bracket '}'
                   const lastBracket = event.args.lastIndexOf('}');
                   if (lastBracket !== -1) {
-                    // Snip off the broken half-generated tokens and force close the JSON array
                     const cleanString = event.args.substring(0, lastBracket + 1) + ']}';
                     const partialData = JSON.parse(cleanString);
                     
-                    if (partialData.questions && partialData.questions.length > streamingQuestions.length) {
+                    if (partialData.questions) {
                       const formatted = partialData.questions.map((q, i) => ({
                           id: `stream-${i}`, ...q
                       }));
                       setStreamProgress(`Drafting question ${formatted.length}...`);
                       
-                      // Push the valid ones to our live-view state!
+                      // Update BOTH our local variable and the React UI
+                      localDrafts = formatted; 
                       setStreamingQuestions(formatted);
                     }
                   }
-                } catch (e) { /* Ignore chunks that are too mangled */ }
+                } catch (e) { /* Ignore mangled chunks */ }
               }
 
               if (event.type === 'RUN_ERROR') throw new Error(event.error);
 
               if (event.type === 'RUN_FINISHED') {
-                 // Try one final clean parse for safety
-                 const finalParse = JSON.parse(event.args || "{}");
-                 const finalQuestions = finalParse.questions || streamingQuestions;
-
-                 if (finalQuestions.length > 0) {
-                    const formattedQuestions = finalQuestions.map(q => ({
+                 // THE FIX: Use our local variable instead of React's stale state
+                 if (localDrafts.length > 0) {
+                    const formattedQuestions = localDrafts.map(q => ({
+                        // Give them permanent IDs
                         id: Date.now().toString() + Math.random().toString(36).substring(7),
                         ...q
                     }));
-                    // Move them from the temporary draft state to the REAL test state
+                    
+                    // Move them from the draft state to the permanent test state!
                     setQuestions(prev => [...prev, ...formattedQuestions]);
                  }
+                 
+                 // Clean up the UI
                  setAiTopic('');
                  setStreamProgress('');
-                 setStreamingQuestions([]); // Clear the drafts
+                 setStreamingQuestions([]); 
               }
             } catch (e) { console.error("Parse error:", e); }
           }
