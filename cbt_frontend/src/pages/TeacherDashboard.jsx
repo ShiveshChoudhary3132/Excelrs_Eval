@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 
+//AG-UI Implemented teacher dashboard
+
 export default function TeacherDashboard() {
   const { token, logout } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState('classrooms');
