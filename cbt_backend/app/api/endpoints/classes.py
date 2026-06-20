@@ -28,6 +28,7 @@ router = APIRouter()
 class AITestRequest(BaseModel):
     topic: str
     question_count: int
+    existing_context: Optional[List[str]] = []
 
 class TranslateRequest(BaseModel):
     questions: list
@@ -389,10 +390,15 @@ async def ag_ui_generate_test(payload: AITestRequest):
     - 'correctAnswerIndex': An integer (0, 1, 2, or 3) representing the correct option.
     """
 
+    context_str = ""
+    if payload.existing_context:
+        context_str = "\nEXISTING QUESTIONS ON THE TEST (Do NOT duplicate these. Match their topic/vibe, but generate entirely new ones):\n" + "\n".join([f"- {q}" for q in payload.existing_context])
+
     seed = f"{time.time()}-{random.randint(10000, 99999)}"
     user_prompt = f"""
-    Topic & Difficulty Instructions: "{payload.topic}"
+    Topic & Instructions: "{payload.topic}"
     Number of questions: {payload.question_count}
+    {context_str} 
     Randomization Seed: {seed}
     """
 

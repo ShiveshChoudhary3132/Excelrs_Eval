@@ -32,6 +32,7 @@ export default function TeacherDashboard() {
   const [aiCount, setAiCount] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamProgress, setStreamProgress] = useState(''); // New state for AG-UI loading updates
+  const [streamingQuestions, setStreamingQuestions] = useState([]);
 
   // --- GRADING STATE ---
   const [testSubmissions, setTestSubmissions] = useState([]);
@@ -167,91 +168,93 @@ export default function TeacherDashboard() {
     let generatedQuestions = [];
 
     try {
-      // 1. Use the native browser fetch API
       const response = await fetch('https://excelrs-backend.onrender.com/api/classes/ai/ag-ui-generate', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}` 
         },
-        body: JSON.stringify({ topic: aiTopic, question_count: parseInt(aiCount) })
+        body: JSON.stringify({ 
+          topic: aiTopic, 
+          question_count: parseInt(aiCount),
+          // Send all existing question texts to the AI so it knows what to copy!
+          existing_context: questions.map(q => q.text) 
+        })
       });
 
       if (!response.ok) throw new Error("Network response was not ok");
 
-      // 2. Open the native data stream reader
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
 
-      // 3. Read the chunks of text as they arrive from the Python backend
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // Decode the binary data into text and add it to our buffer
         buffer += decoder.decode(value, { stream: true });
-
-        // SSE messages are separated by double newlines (\n\n)
         const parts = buffer.split('\n\n');
-        
-        // Keep the last, incomplete chunk in the buffer for the next loop
         buffer = parts.pop(); 
 
         for (const part of parts) {
           if (part.startsWith('data: ')) {
-            // Strip the "data: " prefix to get the raw JSON string
             const dataStr = part.substring(6); 
             
             try {
               const event = JSON.parse(dataStr);
 
-              if (event.type === 'RUN_STARTED') {
-                setStreamProgress('Agent thinking...');
-              }
+              if (event.type === 'RUN_STARTED') setStreamProgress('Agent thinking...');
 
-              // Catch the streaming payload!
               if (event.type === 'TOOL_CALL_ARGS') {
-                setStreamProgress('Drafting questions...');
                 try {
-                  // Optimistically parse the partial JSON stream
-                  const partialData = JSON.parse(event.args);
-                  if (partialData.questions) {
-                    generatedQuestions = partialData.questions;
+                  // THE HACK: Find the last complete closing bracket '}'
+                  const lastBracket = event.args.lastIndexOf('}');
+                  if (lastBracket !== -1) {
+                    // Snip off the broken half-generated tokens and force close the JSON array
+                    const cleanString = event.args.substring(0, lastBracket + 1) + ']}';
+                    const partialData = JSON.parse(cleanString);
+                    
+                    if (partialData.questions && partialData.questions.length > streamingQuestions.length) {
+                      const formatted = partialData.questions.map((q, i) => ({
+                          id: `stream-${i}`, ...q
+                      }));
+                      setStreamProgress(`Drafting question ${formatted.length}...`);
+                      
+                      // Push the valid ones to our live-view state!
+                      setStreamingQuestions(formatted);
+                    }
                   }
-                } catch (e) {
-                  // Ignore incomplete JSON chunks until the next full payload arrives
-                }
+                } catch (e) { /* Ignore chunks that are too mangled */ }
               }
 
-              if (event.type === 'RUN_ERROR') {
-                throw new Error(event.error || "Generation failed");
-              }
+              if (event.type === 'RUN_ERROR') throw new Error(event.error);
 
               if (event.type === 'RUN_FINISHED') {
-                 if (generatedQuestions.length > 0) {
-                    const formattedQuestions = generatedQuestions.map(q => ({
+                 // Try one final clean parse for safety
+                 const finalParse = JSON.parse(event.args || "{}");
+                 const finalQuestions = finalParse.questions || streamingQuestions;
+
+                 if (finalQuestions.length > 0) {
+                    const formattedQuestions = finalQuestions.map(q => ({
                         id: Date.now().toString() + Math.random().toString(36).substring(7),
                         ...q
                     }));
+                    // Move them from the temporary draft state to the REAL test state
                     setQuestions(prev => [...prev, ...formattedQuestions]);
-                    alert(`Success! Streamed ${formattedQuestions.length} questions into the assessment.`);
-                 } else {
-                    alert("Agent finished, but no questions were produced.");
                  }
                  setAiTopic('');
                  setStreamProgress('');
+                 setStreamingQuestions([]); // Clear the drafts
               }
-            } catch (e) {
-              console.error("JSON Parse error on stream chunk:", e);
-            }
+            } catch (e) { console.error("Parse error:", e); }
           }
         }
       }
     } catch (error) {
-      console.error("Stream Connection Error:", error);
-      alert("Failed to connect to the generation stream. Check console for details.");
+      console.error("Stream Error:", error);
+      alert("Failed to connect to the generation stream.");
       setStreamProgress('');
+      setStreamingQuestions([]);
     } finally {
       setIsGenerating(false);
     }
@@ -607,6 +610,18 @@ export default function TeacherDashboard() {
                           })}
                         </div>
                       )}
+                    </div>
+                  ))}
+
+                  {/* --- LIVE STREAMING DRAFTS (Appears instantly during generation) --- */}
+                  {streamingQuestions.map((q, index) => (
+                    <div key={q.id} className="bg-emerald-50 rounded-2xl p-8 shadow-sm border-2 border-emerald-300 border-dashed opacity-80 flex flex-col gap-6 animate-pulse">
+                      <div className="flex items-center gap-3 border-b-2 border-emerald-200/50 pb-4">
+                        <span className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm font-black tracking-widest">
+                          ✨ AI DRAFT {questions.length + index + 1}
+                        </span>
+                      </div>
+                      <textarea disabled value={q.text} className="w-full px-5 py-4 border-2 border-emerald-200 bg-white rounded-xl text-lg font-semibold resize-none text-emerald-900" rows="2" />
                     </div>
                   ))}
                 </div>
