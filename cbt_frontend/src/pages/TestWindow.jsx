@@ -24,6 +24,9 @@ export default function App() {
   const [markedForReview, setMarkedForReview] = useState({}); 
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // NEW: State for the custom confirmation modal
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); 
   const isFinishing = useRef(false); 
   
   // --- TRANSLATION STATE ---
@@ -416,7 +419,7 @@ export default function App() {
   // --- PROCTORING AI ENGINE LOOP ---
   const checkFaces = useCallback(async () => {
     if (!videoRef.current || videoRef.current.readyState !== 4 || !faceModel) return;
-    if (isFinishing.current || securityLockout) return; 
+    if (isFinishing.current || securityLockout || showSubmitConfirm) return; // Halt detection if confirm is open
 
     try {
       const predictions = await faceModel.estimateFaces(videoRef.current, false);
@@ -444,15 +447,15 @@ export default function App() {
     } catch (err) {
       console.warn("Face detection error:", err);
     }
-  }, [faceModel, securityLockout, triggerWarning]);
+  }, [faceModel, securityLockout, showSubmitConfirm, triggerWarning]);
 
   useEffect(() => {
     let interval;
-    if (hasStarted && isModelLoaded && !securityLockout) {
+    if (hasStarted && isModelLoaded && !securityLockout && !showSubmitConfirm) {
       interval = setInterval(checkFaces, 1000);
     }
     return () => clearInterval(interval);
-  }, [hasStarted, isModelLoaded, securityLockout, checkFaces]);
+  }, [hasStarted, isModelLoaded, securityLockout, showSubmitConfirm, checkFaces]);
 
   // Anti-Cheat Events
   useEffect(() => {
@@ -594,6 +597,8 @@ export default function App() {
       {/* --- VIEW 2: ACTIVE SECURED EXAM PAGE --- */}
       {hasStarted && (
         <div className="min-h-screen bg-slate-100 flex flex-col font-sans select-none relative pb-12">
+          
+          {/* SECURITY LOCKOUT OVERLAY */}
           {securityLockout && (
             <div className="fixed inset-0 z-[100] bg-red-900/95 backdrop-blur-md flex items-center justify-center p-6 text-center">
               <div className="bg-white rounded-3xl p-12 max-w-xl w-full shadow-2xl space-y-6 transform animate-in zoom-in-95 duration-200">
@@ -605,6 +610,36 @@ export default function App() {
                 </div>
                 <p className="text-slate-500 font-bold">Your testing environment has been paused. You must return to the secure full-screen view to continue.</p>
                 <button onClick={handleResumeSecureSession} className="w-full bg-slate-900 hover:bg-red-600 text-white font-black py-5 rounded-xl transition-all shadow-xl text-lg mt-4">I Understand — Resume Assessment</button>
+              </div>
+            </div>
+          )}
+
+          {/* NEW: CUSTOM SUBMIT CONFIRMATION MODAL */}
+          {showSubmitConfirm && (
+            <div className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
+              <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl space-y-6 transform animate-in zoom-in-95 duration-200">
+                <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 size={40} />
+                </div>
+                <h2 className="text-2xl font-black text-slate-900 m-0">Ready to Submit?</h2>
+                <p className="text-slate-500 font-bold">Are you sure you want to finalize and submit your assessment? You will not be able to change your answers after this.</p>
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    onClick={() => setShowSubmitConfirm(false)} 
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-4 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowSubmitConfirm(false);
+                      submitTest(false);
+                    }} 
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl transition-colors shadow-md"
+                  >
+                    Yes, Submit
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -643,13 +678,17 @@ export default function App() {
               <div className={`font-black text-2xl flex items-center gap-3 px-6 py-2 rounded-xl border-2 ${timeLeft < 300 ? 'bg-red-50 border-red-200 text-red-600 animate-pulse' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
                 <Clock size={24} /> {formatTime(timeLeft)}
               </div>
-              <button onClick={() => { if(window.confirm("Are you sure you want to submit?")) submitTest(false); }} disabled={isSubmitting || securityLockout} className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-8 py-3 rounded-xl transition-colors shadow-md flex items-center gap-2 disabled:opacity-50">
+              <button 
+                onClick={() => setShowSubmitConfirm(true)} 
+                disabled={isSubmitting || securityLockout} 
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-8 py-3 rounded-xl transition-colors shadow-md flex items-center gap-2 disabled:opacity-50"
+              >
                  {isSubmitting ? "Saving..." : "Submit Test"} <CheckCircle2 size={18} />
               </button>
             </div>
           </header>
 
-          <main className={`flex-1 max-w-7xl w-full mx-auto p-8 flex flex-col lg:flex-row gap-8 relative z-10 ${securityLockout ? 'blur-sm pointer-events-none select-none' : ''}`}>
+          <main className={`flex-1 max-w-7xl w-full mx-auto p-8 flex flex-col lg:flex-row gap-8 relative z-10 ${securityLockout || showSubmitConfirm ? 'blur-sm pointer-events-none select-none' : ''}`}>
             
             <div className="flex-1 space-y-8 pb-32">
               {activeQuestions?.map((q, idx) => (
