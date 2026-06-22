@@ -6,8 +6,6 @@ import {
 } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 
-//AG-UI Implemented teacher dashboard
-
 export default function TeacherDashboard() {
   const { token, logout } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState('classrooms');
@@ -17,7 +15,7 @@ export default function TeacherDashboard() {
   const [selectedClass, setSelectedClass] = useState(null);
   const [newClassName, setNewClassName] = useState('');
   const [studentEmail, setStudentEmail] = useState('');
-  const [teacherEmail, setTeacherEmail] = useState(''); // NEW: Co-teacher state
+  const [teacherEmail, setTeacherEmail] = useState(''); 
   
   // --- TEST STATE ---
   const [testTitle, setTestTitle] = useState('');
@@ -32,7 +30,7 @@ export default function TeacherDashboard() {
   const [aiTopic, setAiTopic] = useState('');
   const [aiCount, setAiCount] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [streamProgress, setStreamProgress] = useState(''); // New state for AG-UI loading updates
+  const [streamProgress, setStreamProgress] = useState(''); 
   const [streamingQuestions, setStreamingQuestions] = useState([]);
 
   // --- GRADING STATE ---
@@ -115,7 +113,6 @@ export default function TeacherDashboard() {
     } catch (error) { console.error(error); }
   };
 
-  // NEW: Delete Classroom Handler
   const handleDeleteClass = async () => {
     if (!window.confirm(`Are you sure you want to permanently delete "${selectedClass.class_name}"? This will erase all enrolled students, published tests, and student grades. This cannot be undone.`)) return;
     try {
@@ -133,7 +130,6 @@ export default function TeacherDashboard() {
     } catch (error) { console.error(error); }
   };
 
-  // NEW: Add Teacher Handler
   const handleAddTeacher = async (e) => {
     e.preventDefault();
     if (!teacherEmail.trim() || !selectedClass) return;
@@ -197,9 +193,6 @@ export default function TeacherDashboard() {
     } catch (error) { console.error(error); }
   };
 
-  // --- 🚀 REFACTORED: AG-UI PROTOCOL GENERATION HANDLER ---
-  // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
-  // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
   // --- 🚀 NATIVE STREAMING GENERATION HANDLER ---
   const handleGenerateAI = async () => {
     if (!aiTopic.trim()) { alert("Please enter a topic and difficulty first!"); return; }
@@ -207,7 +200,6 @@ export default function TeacherDashboard() {
     setIsGenerating(true);
     setStreamProgress('Initializing Agent...');
     
-    // THE FIX: Track the pure, unmangled string directly from the backend
     let rawJsonString = ""; 
 
     try {
@@ -248,14 +240,24 @@ export default function TeacherDashboard() {
               if (event.type === 'RUN_STARTED') setStreamProgress('Agent thinking...');
 
               if (event.type === 'TOOL_CALL_ARGS') {
-                // 1. Always save the pure string for the final save
                 rawJsonString = event.args;
                 
-                // 2. Best-effort hack strictly for the visual preview
+                // --- THE FIX: SMART BRACKET COUNTER ---
                 try {
                   const lastBracket = event.args.lastIndexOf('}');
                   if (lastBracket !== -1) {
-                    const cleanString = event.args.substring(0, lastBracket + 1) + ']}';
+                    let cleanString = event.args.substring(0, lastBracket + 1);
+                    
+                    // Count exactly how many structural tags the AI has left open
+                    const openBraces = (cleanString.match(/\{/g) || []).length;
+                    const closeBraces = (cleanString.match(/\}/g) || []).length;
+                    const openBrackets = (cleanString.match(/\[/g) || []).length;
+                    const closeBrackets = (cleanString.match(/\]/g) || []).length;
+                    
+                    // Dynamically seal the JSON string to prevent parse panics
+                    if (openBrackets > closeBrackets) cleanString += ']';
+                    if (openBraces > closeBraces) cleanString += '}';
+                    
                     const partialData = JSON.parse(cleanString);
                     
                     if (partialData.questions) {
@@ -266,30 +268,24 @@ export default function TeacherDashboard() {
                       setStreamingQuestions(formatted);
                     }
                   }
-                } catch (e) { /* Ignore partial parse errors for the visual preview */ }
+                } catch (e) { /* Ignore chunks that are too aggressively mangled */ }
               }
 
               if (event.type === 'RUN_ERROR') throw new Error(event.error);
 
               if (event.type === 'RUN_FINISHED') {
-                 // 3. THE GUARANTEED SAVE: Parse the un-hacked, perfect JSON string here!
                  try {
                     const finalData = JSON.parse(rawJsonString);
-                    
                     if (finalData.questions && finalData.questions.length > 0) {
                        const formattedQuestions = finalData.questions.map(q => ({
                            id: Date.now().toString() + Math.random().toString(36).substring(7),
                            ...q
                        }));
-                       
-                       // Move them to the permanent test state
                        setQuestions(prev => [...prev, ...formattedQuestions]);
                     }
                  } catch (finalParseError) {
                     console.error("The AI generated an invalid final format. Raw output:", rawJsonString);
                  }
-                 
-                 // Clean up the UI
                  setAiTopic('');
                  setStreamProgress('');
                  setStreamingQuestions([]); 
@@ -341,6 +337,12 @@ export default function TeacherDashboard() {
     e.preventDefault();
     if (!testTitle.trim() || !testDueDate || !selectedClass) return;
     if (questions.length === 0) { alert("Please add at least one question."); return; }
+    
+    // --- THE FIX: TIME-TRAVELING DEADLINE BLOCKER ---
+    if (new Date(testDueDate) < new Date()) {
+      alert("The submission deadline cannot be set in the past.");
+      return;
+    }
     
     try {
       const response = await fetch(`https://excelrs-backend.onrender.com/api/classes/${selectedClass.id}/tests`, {
@@ -438,7 +440,6 @@ export default function TeacherDashboard() {
               <span className="flex h-4 w-4 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-blue-600"></span></span>
               <p className="text-base text-slate-600 font-bold m-0">Active Workspace: <strong className="text-slate-900">{selectedClass.class_name}</strong></p>
             </div>
-            {/* NEW: Workspace Deletion Button */}
             <button 
               onClick={handleDeleteClass} 
               className="text-sm font-bold text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors flex items-center gap-2"
@@ -481,7 +482,6 @@ export default function TeacherDashboard() {
                 ) : (
                   <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-300 h-full flex flex-col">
                     
-                    {/* NEW: Dual Form Grid for Students and Teachers */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 border-b-2 border-slate-100 pb-8">
                       <div>
                         <h2 className="text-lg font-black text-slate-900 mb-2 flex items-center gap-2 m-0"><UserPlus size={20} className="text-blue-600" /> Add Students</h2>
@@ -500,7 +500,6 @@ export default function TeacherDashboard() {
                       </div>
                     </div>
                     
-                    {/* NEW: Dual List Grid for Students and Teachers */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                       <div>
                         <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2 m-0"><Users size={18} /> Enrolled Students ({selectedClass.students?.length || 0})</h3>
@@ -615,7 +614,15 @@ export default function TeacherDashboard() {
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
                       <div className="sm:col-span-2">
                         <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Submission Deadline</label>
-                        <input type="datetime-local" required value={testDueDate} onChange={(e) => setTestDueDate(e.target.value)} className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:border-violet-500 font-bold outline-none" />
+                        {/* --- THE FIX: DYNAMIC MIN DATE ENFORCER --- */}
+                        <input 
+                          type="datetime-local" 
+                          required 
+                          value={testDueDate} 
+                          min={new Date().toISOString().slice(0, 16)} 
+                          onChange={(e) => setTestDueDate(e.target.value)} 
+                          className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:border-violet-500 font-bold outline-none" 
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Duration (Mins)</label>
